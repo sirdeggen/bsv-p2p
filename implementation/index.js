@@ -13,6 +13,7 @@ const compare = (a1, a2) =>
 const genesis = Array.from(Buffer.from('6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000', 'hex'))
 let prevHash = genesis
 let height = 0
+let latestFile
 
 
 // open the directory of files, put the filenames into a list
@@ -23,7 +24,7 @@ function getTip() {
     let tip
     for (const h of hashes) {
         const filename = 'headers/' + h.toHex(32) + '.dat'
-        console.log({ filename })
+        // console.log({ filename })
         
         // read the last 81 bytes of the file
         const file = fs.readFileSync(filename)
@@ -44,8 +45,9 @@ function getTip() {
         } else {
             keepLooking = false
             console.log('this must be the tip ' + h.toHex(32))
-            console.log({ h })
-            tip = h
+            // console.log({ h })
+            tip = Buffer.from(h.toHex(32), 'hex').reverse()
+            latestFile = filename
         }
     }
     return tip
@@ -85,6 +87,7 @@ async function startHeaderService() {
     // New block hashes announced
     for (const hash of hashes) {
         console.log(`New block ${hash.toString("hex")} from ${node}`);
+        
     }
     })
     peer.on("disconnected", console.log);
@@ -92,7 +95,7 @@ async function startHeaderService() {
     peer.on("version", console.log);
     peer.on("message", args => {
         const { payload, command } = args
-        console.log(args)
+        // console.log(args)
         // All messages received
         if (command === 'headers') {
             // save the payload to a new file
@@ -124,7 +127,7 @@ async function startHeaderService() {
     await peer.connect(); // Resolves when connected
 
     const from = getTip()
-    console.log({ height })
+    console.log({ height, from: from.toString('hex') })
     await peer.getHeaders({ from }); // Returns array of Headers
     // peer.getMempool(); // Request node for all mempool txs. Recommend not using. Nodes usually disconnect you.
     // await peer.ping(); // Returns Number. Te response time in milliseconds
