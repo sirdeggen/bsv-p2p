@@ -12,6 +12,44 @@ const compare = (a1, a2) =>
 
 const genesis = Array.from(Buffer.from('6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000', 'hex'))
 let prevHash = genesis
+let height = 0
+
+
+// open the directory of files, put the filenames into a list
+function getTip() {
+    const files = fs.readdirSync('headers/')
+    if (files.length === 0) return genesis
+    const hashes = files.map(f => bsv.BigNumber.fromHex(Buffer.from(f.split('.')[0], 'hex').reverse().toString('hex'))).sort((a, b) => a.ucmp(b))
+    let tip
+    for (const h of hashes) {
+        const filename = 'headers/' + h.toHex(32) + '.dat'
+        console.log({ filename })
+        
+        // read the last 81 bytes of the file
+        const file = fs.readFileSync(filename)
+        const r = new Reader(file)
+        const numBlocks = r.readVarIntNum()
+        height += numBlocks
+        if (!!tip) continue
+        const header = file.slice(-81)
+        // check the prevhash
+        const previous = Array.from(header.slice(4, 36))
+        // is the previous hash one of the files?
+        if (hashes.find(h => {
+            const f = bsv.BigNumber.fromHex(Buffer.from(previous).reverse().toString('hex'))
+            // console.log({ h, f })
+            return h.ucmp(f) === 0
+        })) {
+            console.log('found previous')
+        } else {
+            keepLooking = false
+            console.log('this must be the tip ' + h.toHex(32))
+            console.log({ h })
+            tip = h
+        }
+    }
+    return tip
+}
 
 async function startHeaderService() {
     const { address: node } = await dns.promises.lookup("seed-nodes.bsvb.tech")
@@ -22,7 +60,7 @@ async function startHeaderService() {
     const autoReconnect = true
     const disableExtmsg = false
     const mempoolTxs = false
-    const DEBUG_LOG = true
+    const DEBUG_LOG = false
 
     const peer = new BitcoinP2P({
         node,
@@ -54,7 +92,7 @@ async function startHeaderService() {
     peer.on("version", console.log);
     peer.on("message", args => {
         const { payload, command } = args
-        // console.log(args)
+        console.log(args)
         // All messages received
         if (command === 'headers') {
             // save the payload to a new file
@@ -73,10 +111,10 @@ async function startHeaderService() {
             }
             const from = Buffer.from(prevHash).reverse()
             const lastHash = from.toString('hex')
-            const file = fs.createWriteStream(lastHash + '.dat');
+            const file = fs.createWriteStream('headers/' + lastHash + '.dat');
             file.write(payload);
             file.end();
-            console.log({ lastHash })
+            // console.log({ lastHash })
             peer.getHeaders({ from });
         }
     });
@@ -84,7 +122,10 @@ async function startHeaderService() {
     peer.on("error_socket", console.error);
 
     await peer.connect(); // Resolves when connected
-    await peer.getHeaders({}); // Returns array of Headers
+
+    const from = getTip()
+    console.log({ height })
+    await peer.getHeaders({ from }); // Returns array of Headers
     // peer.getMempool(); // Request node for all mempool txs. Recommend not using. Nodes usually disconnect you.
     // await peer.ping(); // Returns Number. Te response time in milliseconds
     // await peer.getAddr(); // Request nodes connected peers list
