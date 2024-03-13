@@ -95,7 +95,7 @@ async function startHeaderService() {
     peer.on("version", console.log);
     peer.on("message", args => {
         const { payload, command } = args
-        // console.log(args)
+        if (command === 'reject') console.log(args)
         // All messages received
         if (command === 'headers') {
             // save the payload to a new file
@@ -117,7 +117,7 @@ async function startHeaderService() {
             const file = fs.createWriteStream('headers/' + lastHash + '.dat');
             file.write(payload);
             file.end();
-            // console.log({ lastHash })
+            console.log({ lastHash })
             peer.getHeaders({ from });
         }
     });
@@ -127,7 +127,7 @@ async function startHeaderService() {
     await peer.connect(); // Resolves when connected
 
     const from = getTip()
-    console.log({ height, from: from.toString('hex') })
+    console.log({ height, latestFile, from })
     await peer.getHeaders({ from }); // Returns array of Headers
     // peer.getMempool(); // Request node for all mempool txs. Recommend not using. Nodes usually disconnect you.
     // await peer.ping(); // Returns Number. Te response time in milliseconds
