@@ -4,22 +4,28 @@ const dns = require("dns")
 const fs = require("fs")
 const Reader = bsv.Utils.Reader
 const sha256 = bsv.Hash.sha256
-const compare = (a1, a2) =>
+const different = (a1, a2) =>
   !(a1.length == a2.length &&
   a1.every(
     (element, index) => element === a2[index]
   ))
 
+const same = (a1, a2) => !different(a1, a2)
+
 const genesis = Array.from(Buffer.from('6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000', 'hex'))
 let prevHash = genesis
 let height = 0
 let latestFile
+let lastHashGlobal
 
 
 // open the directory of files, put the filenames into a list
 function getTip() {
     const files = fs.readdirSync('headers/')
-    if (files.length === 0) return genesis
+    if (files.length === 0) {
+        console.log('starting from genesis')
+        return genesis
+    }
     const hashes = files.map(f => bsv.BigNumber.fromHex(Buffer.from(f.split('.')[0], 'hex').reverse().toString('hex'))).sort((a, b) => a.ucmp(b))
     let tip
     for (const h of hashes) {
@@ -46,10 +52,12 @@ function getTip() {
             keepLooking = false
             console.log('this must be the tip ' + h.toHex(32))
             // console.log({ h })
-            tip = Buffer.from(h.toHex(32), 'hex').reverse()
+            tip = Buffer.from(h.toHex(32), 'hex')
             latestFile = filename
         }
     }
+    prevHash = Array.from(tip.reverse())
+    tip.reverse()
     return tip
 }
 
@@ -107,17 +115,19 @@ async function startHeaderService() {
                 // console.log({ header: header.toString('hex') })
                 const previous = Array.from(header.slice(4, 36))
                 // console.log({ previous, prevHash })
-                if (compare(previous, prevHash)) throw Error('Invalid header')
+                if (different(previous, prevHash)) throw Error('Invalid header')
+                // console.log({ prevHash: bsv.Utils.toHex(prevHash), thisHash: bsv.Utils.toHex(thisHash) })
                 prevHash = sha256(sha256(Array.from(header)))
                 // console.log({ hash: toHex(prevHash) })
                 r.read(1)
             }
             const from = Buffer.from(prevHash).reverse()
             const lastHash = from.toString('hex')
+            if (lastHash === lastHashGlobal) return console.log({ lastHash })
+            lastHashGlobal = lastHash
             const file = fs.createWriteStream('headers/' + lastHash + '.dat');
             file.write(payload);
             file.end();
-            console.log({ lastHash })
             peer.getHeaders({ from });
         }
     });
