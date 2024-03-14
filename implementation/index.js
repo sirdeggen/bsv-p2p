@@ -37,7 +37,13 @@ function getTip() {
         const file = fs.readFileSync(filename)
         const r = new Reader(file)
         const numBlocks = r.readVarIntNum()
-        height += numBlocks
+        if (!numBlocks) {
+            fs.unlinkSync(filename)
+            console.log('deleted ' + filename)
+            continue
+        } else {
+            height += numBlocks
+        }
         if (!!tip) continue
         const header = file.slice(-81)
         // check the prevhash
@@ -100,7 +106,7 @@ async function startHeaderService() {
         if (hashes.length === 0) {
             console.log('no new blocks')
         } else {
-            peer.getHeaders({ from: hashes })
+            return peer.getHeaders({ from: hashes })
         }
     })
     peer.on("disconnected", console.log);
@@ -135,13 +141,14 @@ async function startHeaderService() {
             if (catchingUp) {
                 if (lastHash === lastHashGlobal) {
                     catchingUp = false
-                    return console.log({ lastHash })
+                    return console.log({ height, lastHash })
                 }
                 lastHashGlobal = lastHash
-                file.write(payload);
-                file.end();
-                peer.getHeaders({ from });
+                file.write(payload)
+                file.end()
+                peer.getHeaders({ from })
             } else {
+                console.log('dealing with new headers')
                 // open the latest file, read the first varint, and append to it if it's less than 2000
                 const f = fs.readFileSync(latestFile)
                 const current = new Reader(f)
@@ -149,6 +156,7 @@ async function startHeaderService() {
                 if (currentFileNumHeaders < 2000) {
                     const newTotal = currentFileNumHeaders + newHeaders.length
                     if (newTotal > 2000) {
+                        console.log('finishing one file and starting another')
                         const toWrite = newHeaders.slice(0, 2000 - currentFileNumHeaders)
                         const lastHashInSlice = Buffer.from(sha256(sha256(toWrite[toWrite.length - 1])).reverse()).toString('hex')
                         const partFile = fs.createWriteStream('headers/' + lastHashInSlice + '.dat')
@@ -159,7 +167,7 @@ async function startHeaderService() {
                             w.write(h)
                             w.write(0x00)
                         })
-                        partFile.write(w.toBuffer())
+                        partFile.write(Buffer.from(w.toArray()))
                         partFile.end()
                         const remaining = newHeaders.slice(2000 - currentFileNumHeaders)
                         const wn = new Writer()
@@ -168,9 +176,10 @@ async function startHeaderService() {
                             wn.write(h)
                             wn.write(0x00)
                         })
-                        file.write(wn.toBuffer())
+                        file.write(Buffer.from(wn.toArray()))
                         file.end()
                     } else {
+                        console.log('appending to the current file')
                         const w = new Writer()
                         w.writeVarIntNum(number + currentFileNumHeaders)
                         w.write(current.read())
@@ -178,17 +187,19 @@ async function startHeaderService() {
                             w.write(h)
                             w.write(0x00)
                         })
-                        file.write(w.toBuffer())
+                        file.write(Buffer.from(w.toArray()))
                         file.end()
                     }
                     // delete the original file
                     fs.unlinkSync(latestFile)
                 } else {
+                    console.log('moving on to a new file')
                     // just write the whole payload to a new file
                     file.write(payload)
                     file.end()
                 }
                 latestFile = filename
+                console.log({ height, lastHash })
             }
         }
     });
