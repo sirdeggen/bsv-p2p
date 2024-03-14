@@ -13,7 +13,7 @@ const different = (a1, a2) =>
 
 const same = (a1, a2) => !different(a1, a2)
 
-const genesis = Array.from(Buffer.from('6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000', 'hex'))
+const genesis = Buffer.from('6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000', 'hex')
 let prevHash = genesis
 let height = 0
 let latestFile
@@ -210,7 +210,7 @@ async function startHeaderService() {
 
     const from = getTip()
     console.log({ height, latestFile, from })
-    await peer.getHeaders({ from }); // Returns array of Headers
+    await peer.getHeaders({ from }) // Returns array of Headers
     // peer.getMempool(); // Request node for all mempool txs. Recommend not using. Nodes usually disconnect you.
     // await peer.ping(); // Returns Number. Te response time in milliseconds
     // await peer.getAddr(); // Request nodes connected peers list
