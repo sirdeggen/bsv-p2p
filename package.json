@@ -1,41 +1,15 @@
 {
-  "name": "bsv-p2p",
-  "version": "2.0.1",
-  "description": "Communicate on the Bitcoin P2P network with minimal overhead or dependencies",
-  "main": "./lib/index.js",
-  "types": "./lib/index.d.ts",
-  "files": [
-    "lib",
-    "src"
-  ],
+  "name": "block-header-service",
+  "version": "0.0.2",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "test": "ts-node ./tests/index.ts",
-    "build": "tsc",
-    "docs": "typedoc",
-    "prepare": "npm run build && npm run docs"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "Kevin Johnson <kevinejohn@gmail.com>",
-  "contributors": [
-    "Andrew Johnson <andrewj@hey.com>"
-  ],
-  "license": "MIT",
+  "author": "sirdeggen",
+  "license": "ISC",
   "dependencies": {
-    "bsv-minimal": "^2.0.0",
-    "source-map-support": "^0.5.21"
-  },
-  "devDependencies": {
-    "@types/node": "^20.8.9",
-    "ts-node": "^10.9.1",
-    "typedoc": "^0.25.2",
-    "typedoc-plugin-markdown": "^3.16.0",
-    "typescript": "^5.2.2"
-  },
-  "keywords": [
-    "bitcoin",
-    "peer to peer"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/kevinejohn/bsv-p2p.git"
+    "@bsv/sdk": "^1.0.10",
+    "bsv-p2p": "^2.0.1"
   }
 }
