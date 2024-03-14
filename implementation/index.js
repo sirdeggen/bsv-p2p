@@ -3,6 +3,7 @@ const bsv = require('@bsv/sdk')
 const dns = require("dns")
 const fs = require("fs")
 const Reader = bsv.Utils.Reader
+const Writer = bsv.Utils.Writer
 const sha256 = bsv.Hash.sha256
 const different = (a1, a2) =>
   !(a1.length == a2.length &&
@@ -17,7 +18,7 @@ let prevHash = genesis
 let height = 0
 let latestFile
 let lastHashGlobal
-
+let catchingUp = true
 
 // open the directory of files, put the filenames into a list
 function getTip() {
@@ -92,11 +93,15 @@ async function startHeaderService() {
     }
     })
     peer.on("block_hashes", ({ hashes }) => {
-    // New block hashes announced
-    for (const hash of hashes) {
-        console.log(`New block ${hash.toString("hex")} from ${node}`);
-        
-    }
+        // New block hashes announced
+        for (const hash of hashes) {
+            console.log(`New block ${hash.toString("hex")}`)
+        }
+        if (hashes.length === 0) {
+            console.log('no new blocks')
+        } else {
+            peer.getHeaders({ from: hashes })
+        }
     })
     peer.on("disconnected", console.log);
     peer.on("connected", console.log);
@@ -106,12 +111,13 @@ async function startHeaderService() {
         if (command === 'reject') console.log(args)
         // All messages received
         if (command === 'headers') {
-            // save the payload to a new file
+            const newHeaders = []
             const r = new Reader(payload)
             const number = r.readVarIntNum()
             // console.log({ number, l: payload.length })
             for (let i = 0; i < number; i++) {
                 const header = r.read(80)
+                newHeaders.push(header)
                 // console.log({ header: header.toString('hex') })
                 const previous = Array.from(header.slice(4, 36))
                 // console.log({ previous, prevHash })
@@ -120,15 +126,70 @@ async function startHeaderService() {
                 prevHash = sha256(sha256(Array.from(header)))
                 // console.log({ hash: toHex(prevHash) })
                 r.read(1)
+                height++
             }
             const from = Buffer.from(prevHash).reverse()
             const lastHash = from.toString('hex')
-            if (lastHash === lastHashGlobal) return console.log({ lastHash })
-            lastHashGlobal = lastHash
-            const file = fs.createWriteStream('headers/' + lastHash + '.dat');
-            file.write(payload);
-            file.end();
-            peer.getHeaders({ from });
+            const filename = 'headers/' + lastHash + '.dat'
+            const file = fs.createWriteStream(filename);
+            if (catchingUp) {
+                if (lastHash === lastHashGlobal) {
+                    catchingUp = false
+                    return console.log({ lastHash })
+                }
+                lastHashGlobal = lastHash
+                file.write(payload);
+                file.end();
+                peer.getHeaders({ from });
+            } else {
+                // open the latest file, read the first varint, and append to it if it's less than 2000
+                const f = fs.readFileSync(latestFile)
+                const current = new Reader(f)
+                let currentFileNumHeaders = current.readVarIntNum()
+                if (currentFileNumHeaders < 2000) {
+                    const newTotal = currentFileNumHeaders + newHeaders.length
+                    if (newTotal > 2000) {
+                        const toWrite = newHeaders.slice(0, 2000 - currentFileNumHeaders)
+                        const lastHashInSlice = Buffer.from(sha256(sha256(toWrite[toWrite.length - 1])).reverse()).toString('hex')
+                        const partFile = fs.createWriteStream('headers/' + lastHashInSlice + '.dat')
+                        const w = new Writer()
+                        w.writeVarIntNum(2000)
+                        w.write(current.read())
+                        newHeaders.map(h => {
+                            w.write(h)
+                            w.write(0x00)
+                        })
+                        partFile.write(w.toBuffer())
+                        partFile.end()
+                        const remaining = newHeaders.slice(2000 - currentFileNumHeaders)
+                        const wn = new Writer()
+                        wn.writeVarIntNum(remaining.length)
+                        remaining.map(h => {
+                            wn.write(h)
+                            wn.write(0x00)
+                        })
+                        file.write(wn.toBuffer())
+                        file.end()
+                    } else {
+                        const w = new Writer()
+                        w.writeVarIntNum(number + currentFileNumHeaders)
+                        w.write(current.read())
+                        newHeaders.map(h => {
+                            w.write(h)
+                            w.write(0x00)
+                        })
+                        file.write(w.toBuffer())
+                        file.end()
+                    }
+                    // delete the original file
+                    fs.unlinkSync(latestFile)
+                } else {
+                    // just write the whole payload to a new file
+                    file.write(payload)
+                    file.end()
+                }
+                latestFile = filename
+            }
         }
     });
     peer.on("error_message", console.error);
