@@ -17,7 +17,7 @@ const same = (a1, a2) => !different(a1, a2)
 const genesis = Buffer.from('6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000', 'hex')
 let prevHash = genesis
 let height = 0
-let latestFile
+let latestFile = 'headers/0000000.dat'
 let lastHashGlobal
 let catchingUp = true
 
@@ -29,17 +29,19 @@ function getTip() {
         return genesis
     }
     const heights = files.map(f => parseInt(f.split('.')[0])).sort((a,b) => b - a)
-    const filename = 'headers/' + heights[0] + '.dat'
+    const bnh = new BigNumber(heights[0])
+    const filename = 'headers/' + bnh.toString(10,7) + '.dat'
     const file = fs.readFileSync(filename)
     const r = new Reader(file)
     const numBlocks = r.readVarIntNum()
     const last = file.slice(-81)
     const header = last.slice(0, 80)
     prevHash = sha256(sha256(Array.from(header)))
-    lastHashGlobal = Buffer.from(prevHash).reverse().toString('hex')
+    const from = Buffer.from(prevHash).reverse()
+    lastHashGlobal = from.toString('hex')
     latestFile = filename
     height = heights[0] + numBlocks
-    return Buffer.from(prevHash)
+    return from
 }
 
 async function startHeaderService() {
@@ -80,7 +82,7 @@ async function startHeaderService() {
         if (hashes.length === 0) {
             console.log('no new blocks')
         } else {
-            return peer.getHeaders({ from: hashes })
+            return peer.getHeaders({ from: [Buffer.from(lastHashGlobal, 'hex')] })
         }
     })
     // height divided by 2000 without remainder
