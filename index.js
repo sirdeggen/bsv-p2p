@@ -1,7 +1,8 @@
-const BitcoinP2P = require("bsv-p2p").default;
+const BitcoinP2P = require("bsv-p2p").default
 const bsv = require('@bsv/sdk')
 const dns = require("dns")
 const fs = require("fs")
+const express = require('express')
 const Reader = bsv.Utils.Reader
 const Writer = bsv.Utils.Writer
 const sha256 = bsv.Hash.sha256
@@ -120,72 +121,63 @@ async function startHeaderService() {
             }
             height += number
             lastHashGlobal = lastHash
-            if (catchingUp) {
-                const sh = (new BigNumber(startingHeight)).toString(10, 7)
-                const filename = 'headers/' + sh + '.dat'
-                const file = fs.createWriteStream(filename)
-                file.write(payload)
-                file.end()
-                peer.getHeaders({ from })
-            } else {
-                console.log('dealing with new headers')
-                // open the latest file, read the first varint, and append to it if it's less than 2000
-                const f = fs.readFileSync(latestFile)
-                const current = new Reader(f)
-                let currentFileNumHeaders = current.readVarIntNum()
-                if (currentFileNumHeaders < 2000) {
-                    const newTotal = currentFileNumHeaders + newHeaders.length
-                    if (newTotal > 2000) {
-                        console.log('finishing one file and starting another')
-                        const toWrite = newHeaders.slice(0, 2000 - currentFileNumHeaders)
-                        const partFile = fs.createWriteStream(latestFile)
-                        const w = new Writer()
-                        w.writeVarIntNum(2000)
-                        w.write(current.read())
-                        toWrite.map(h => {
-                            w.write(h)
-                            w.write(0x00)
-                        })
-                        partFile.write(Buffer.from(w.toArray()))
-                        partFile.end()
-                        const remaining = newHeaders.slice(2000 - currentFileNumHeaders)
-                        const wn = new Writer()
-                        wn.writeVarIntNum(remaining.length)
-                        remaining.map(h => {
-                            wn.write(h)
-                            wn.write(0x00)
-                        })
-                        const eh = (new BigNumber(height - height % 2000)).toString(10, 7)
-                        const file = fs.createWriteStream('headers/' + eh + '.dat')
-                        file.write(Buffer.from(wn.toArray()))
-                        file.end()
-                        latestFile = 'headers/' + eh + '.dat'
-                    } else {
-                        console.log('appending to the current file')
-                        const file = fs.createWriteStream(latestFile)
-                        const w = new Writer()
-                        w.writeVarIntNum(number + currentFileNumHeaders)
-                        w.write(current.read())
-                        newHeaders.map(h => {
-                            w.write(h)
-                            w.write(0x00)
-                        })
-                        file.write(Buffer.from(w.toArray()))
-                        file.end()
-                    }
-                } else {
-                    console.log('moving on to a new file')
-                    // just write the whole payload to a new file
+            console.log('dealing with new headers')
+            // open the latest file, read the first varint, and append to it if it's less than 2000
+            const f = fs.readFileSync(latestFile)
+            const current = new Reader(f)
+            let currentFileNumHeaders = current.readVarIntNum()
+            if (currentFileNumHeaders < 2000) {
+                const newTotal = currentFileNumHeaders + newHeaders.length
+                if (newTotal > 2000) {
+                    console.log('finishing one file and starting another')
+                    const toWrite = newHeaders.slice(0, 2000 - currentFileNumHeaders)
+                    const partFile = fs.createWriteStream(latestFile)
+                    const w = new Writer()
+                    w.writeVarIntNum(2000)
+                    w.write(current.read())
+                    toWrite.map(h => {
+                        w.write(h)
+                        w.write(0x00)
+                    })
+                    partFile.write(Buffer.from(w.toArray()))
+                    partFile.end()
+                    const remaining = newHeaders.slice(2000 - currentFileNumHeaders)
+                    const wn = new Writer()
+                    wn.writeVarIntNum(remaining.length)
+                    remaining.map(h => {
+                        wn.write(h)
+                        wn.write(0x00)
+                    })
                     const eh = (new BigNumber(height - height % 2000)).toString(10, 7)
                     const file = fs.createWriteStream('headers/' + eh + '.dat')
-                    file.write(payload)
+                    file.write(Buffer.from(wn.toArray()))
                     file.end()
                     latestFile = 'headers/' + eh + '.dat'
+                } else {
+                    console.log('appending to the current file')
+                    const file = fs.createWriteStream(latestFile)
+                    const w = new Writer()
+                    w.writeVarIntNum(number + currentFileNumHeaders)
+                    w.write(current.read())
+                    newHeaders.map(h => {
+                        w.write(h)
+                        w.write(0x00)
+                    })
+                    file.write(Buffer.from(w.toArray()))
+                    file.end()
                 }
-                console.log({ height, lastHash })
+            } else {
+                console.log('moving on to a new file')
+                // just write the whole payload to a new file
+                const eh = (new BigNumber(height - height % 2000)).toString(10, 7)
+                const file = fs.createWriteStream('headers/' + eh + '.dat')
+                file.write(payload)
+                file.end()
+                latestFile = 'headers/' + eh + '.dat'
             }
+            console.log({ height, lastHash })
         }
-    });
+    })
     peer.on("error_message", console.error);
     peer.on("error_socket", console.error);
 
@@ -193,16 +185,43 @@ async function startHeaderService() {
 
     const from = getTip()
     console.log({ height, latestFile, from })
-    await peer.getHeaders({ from }) // Returns array of Headers
-    // peer.getMempool(); // Request node for all mempool txs. Recommend not using. Nodes usually disconnect you.
-    // await peer.ping(); // Returns Number. Te response time in milliseconds
-    // await peer.getAddr(); // Request nodes connected peers list
-    // await peer.getBlock("<block hash>"); // Hex string or 32 byte Buffer. If stream = true transactions will come through on peer.on('transactions'...
-    // await peer.broadcastTx("<tx buffer>"); // Tx Buffer
-    // peer.getTxs(["<txid>..."]); // Array of txid 32 byte Buffers
-    // peer.fetchMempoolTxs((txids) => txids); // Return filtered txids to download mempool txs
-    // peer.fetchNewBlocks((hashes) => hashes); // Return filtered block hashes to download new blocks
-
+    return peer.getHeaders({ from })
 }
 
-startHeaderService().finally(console.log)
+const getHeight = () => height
+
+const app = express()
+app.get('/height/:height', (req, res) => {
+    try {
+        if (typeof req?.params?.height === 'undefined') throw Error('no height provided')
+        res.setHeader('Content-Type', 'text/plain')
+        const h = parseInt(req?.params?.height)
+        const fh = h - (h % 2000)
+        const bgh = new BigNumber(fh)
+        const filename = 'headers/' + bgh.toString(10, 7) + '.dat'
+        const file = fs.readFileSync(filename)
+        const r = new Reader(file)
+        const numBlocks = r.readVarIntNum()
+        const offset = (h - fh) * 81
+        const headers = r.read(offset + 81)
+        // last header is
+        const header = headers.slice(-81).slice(0,80)
+        res.status(200).send(header.toString('hex'))
+    } catch (error) {
+        res.setHeader('Content-Type', 'text/plain')
+        console.log({ error })
+        if (error.message.startsWith('ENOENT: no such file or directory')) {
+            res.status(400).send('unknown, tip is at ' + getHeight())
+        } else {
+            res.status(400).send(error.message)
+        }
+    }
+})
+
+const port = 80
+startHeaderService().finally(() => {
+    console.log('started header peer')
+    app.listen(port, () => {
+        console.log('started api on port ' + port)
+    })
+})
