@@ -27,45 +27,18 @@ function getTip() {
         console.log('starting from genesis')
         return genesis
     }
-    const hashes = files.map(f => bsv.BigNumber.fromHex(Buffer.from(f.split('.')[0], 'hex').reverse().toString('hex'))).sort((a, b) => a.ucmp(b))
-    let tip
-    for (const h of hashes) {
-        const filename = 'headers/' + h.toHex(32) + '.dat'
-        // console.log({ filename })
-        
-        // read the last 81 bytes of the file
-        const file = fs.readFileSync(filename)
-        const r = new Reader(file)
-        const numBlocks = r.readVarIntNum()
-        if (!numBlocks) {
-            fs.unlinkSync(filename)
-            console.log('deleted ' + filename)
-            continue
-        } else {
-            height += numBlocks
-        }
-        if (!!tip) continue
-        const header = file.slice(-81)
-        // check the prevhash
-        const previous = Array.from(header.slice(4, 36))
-        // is the previous hash one of the files?
-        if (hashes.find(h => {
-            const f = bsv.BigNumber.fromHex(Buffer.from(previous).reverse().toString('hex'))
-            // console.log({ h, f })
-            return h.ucmp(f) === 0
-        })) {
-            console.log('found previous')
-        } else {
-            keepLooking = false
-            console.log('this must be the tip ' + h.toHex(32))
-            // console.log({ h })
-            tip = Buffer.from(h.toHex(32), 'hex')
-            latestFile = filename
-        }
-    }
-    prevHash = Array.from(tip.reverse())
-    tip.reverse()
-    return tip
+    const heights = files.map(f => parseInt(f.split('.')[0])).sort((a,b) => b - a)
+    const filename = 'headers/' + heights[0] + '.dat'
+    const file = fs.readFileSync(filename)
+    const r = new Reader(file)
+    const numBlocks = r.readVarIntNum()
+    const last = file.slice(-81)
+    const header = last.slice(0, 80)
+    prevHash = sha256(sha256(Array.from(header)))
+    lastHashGlobal = Buffer.from(prevHash).reverse().toString('hex')
+    latestFile = filename
+    height = heights[0] + numBlocks
+    return Buffer.from(prevHash)
 }
 
 async function startHeaderService() {
@@ -109,10 +82,13 @@ async function startHeaderService() {
             return peer.getHeaders({ from: hashes })
         }
     })
+    // height divided by 2000 without remainder
+    rmg = 
     peer.on("disconnected", console.log);
     peer.on("connected", console.log);
     peer.on("version", console.log);
     peer.on("message", args => {
+        const startingHeight = height
         const { payload, command } = args
         if (command === 'reject') console.log(args)
         // All messages received
@@ -132,18 +108,19 @@ async function startHeaderService() {
                 prevHash = sha256(sha256(Array.from(header)))
                 // console.log({ hash: toHex(prevHash) })
                 r.read(1)
-                height++
             }
             const from = Buffer.from(prevHash).reverse()
             const lastHash = from.toString('hex')
-            const filename = 'headers/' + lastHash + '.dat'
-            const file = fs.createWriteStream(filename);
+            if (lastHash === lastHashGlobal) {
+                catchingUp = false
+                return console.log({ height, lastHash })
+            }
+            height += number
+            lastHashGlobal = lastHash
             if (catchingUp) {
-                if (lastHash === lastHashGlobal) {
-                    catchingUp = false
-                    return console.log({ height, lastHash })
-                }
-                lastHashGlobal = lastHash
+                const sh = (new BigNumber(startingHeight)).toString(10, 7)
+                const filename = 'headers/' + sh + '.dat'
+                const file = fs.createWriteStream(filename)
                 file.write(payload)
                 file.end()
                 peer.getHeaders({ from })
@@ -158,12 +135,11 @@ async function startHeaderService() {
                     if (newTotal > 2000) {
                         console.log('finishing one file and starting another')
                         const toWrite = newHeaders.slice(0, 2000 - currentFileNumHeaders)
-                        const lastHashInSlice = Buffer.from(sha256(sha256(toWrite[toWrite.length - 1])).reverse()).toString('hex')
-                        const partFile = fs.createWriteStream('headers/' + lastHashInSlice + '.dat')
+                        const partFile = fs.createWriteStream(latestFile)
                         const w = new Writer()
                         w.writeVarIntNum(2000)
                         w.write(current.read())
-                        newHeaders.map(h => {
+                        toWrite.map(h => {
                             w.write(h)
                             w.write(0x00)
                         })
@@ -176,10 +152,14 @@ async function startHeaderService() {
                             wn.write(h)
                             wn.write(0x00)
                         })
+                        const eh = (new BigNumber(height - height % 2000)).toString(10, 7)
+                        const file = fs.createWriteStream('headers/' + eh + '.dat')
                         file.write(Buffer.from(wn.toArray()))
                         file.end()
+                        latestFile = 'headers/' + eh + '.dat'
                     } else {
                         console.log('appending to the current file')
+                        const file = fs.createWriteStream(latestFile)
                         const w = new Writer()
                         w.writeVarIntNum(number + currentFileNumHeaders)
                         w.write(current.read())
@@ -190,15 +170,15 @@ async function startHeaderService() {
                         file.write(Buffer.from(w.toArray()))
                         file.end()
                     }
-                    // delete the original file
-                    fs.unlinkSync(latestFile)
                 } else {
                     console.log('moving on to a new file')
                     // just write the whole payload to a new file
+                    const eh = (new BigNumber(height - height % 2000)).toString(10, 7)
+                    const file = fs.createWriteStream('headers/' + eh + '.dat')
                     file.write(payload)
                     file.end()
+                    latestFile = 'headers/' + eh + '.dat'
                 }
-                latestFile = filename
                 console.log({ height, lastHash })
             }
         }
