@@ -5,6 +5,7 @@ const fs = require("fs")
 const Reader = bsv.Utils.Reader
 const Writer = bsv.Utils.Writer
 const sha256 = bsv.Hash.sha256
+const BigNumber = bsv.BigNumber
 const different = (a1, a2) =>
   !(a1.length == a2.length &&
   a1.every(
